@@ -27,13 +27,17 @@ public class SimpleSec {
                     break;
                 case "e":
                     if (args.length != 3) {
-                        usageAndExit("WARNING Command 'e' requires 2 arguments (sourceFile destinationFile), but you provided " + (args.length - 1));
+                        usageAndExit(
+                                "WARNING Command 'e' requires 2 arguments (sourceFile destinationFile), but you provided "
+                                        + (args.length - 1));
                     }
                     encryptFile(args[1], args[2]);
                     break;
                 case "d":
                     if (args.length != 3) {
-                        usageAndExit("WARNING Command 'd' requires 2 arguments (sourceFile destinationFile), but you provided " + (args.length - 1));
+                        usageAndExit(
+                                "WARNING Command 'd' requires 2 arguments (sourceFile destinationFile), but you provided "
+                                        + (args.length - 1));
                     }
                     decryptFile(args[1], args[2]);
                     break;
@@ -45,6 +49,7 @@ public class SimpleSec {
             System.out.println("Reinicie la aplicación.");
         }
     }
+
     private static void usageAndExit(String message) {
         System.err.println("===== SimpleSec - Usage =====");
         System.err.println("  java SimpleSec g");
@@ -59,7 +64,7 @@ public class SimpleSec {
     /**
      * Command: g → Generate RSA keys, protect private.key with AES
      */
- // ---------------------- GENERATE KEYS ----------------------
+    // ---------------------- GENERATE KEYS ----------------------
     private static void generateKeys() throws Exception {
         // RSALibrary now returns the private key bytes; it still writes the public key.
         byte[] privateKeyBytes = rsa.generateKeys();
@@ -97,11 +102,10 @@ public class SimpleSec {
             priv = loadPrivateKey(privBytes);
         } catch (Exception ex) {
             throw new SecurityException(
-                "WARNING: incorrect passphrase : couldn't decypher the private key.\n" 
-                
+                    "WARNING: incorrect passphrase : couldn't decypher the private key.\n"
+
             );
         }
-
 
         // Load public key
         byte[] pubBytes = Files.readAllBytes(Paths.get("public.key"));
@@ -134,11 +138,14 @@ public class SimpleSec {
     // ---------------------- DECRYPT ----------------------
     private static void decryptFile(String sourceFile, String destFile) throws Exception {
         byte[] fileData = Files.readAllBytes(Paths.get(sourceFile));
-        //debemos recibir [encSessionKey][ciphertext][signature] la signature son 128  y el encSessionKey otros 128
+        // debemos recibir [encSessionKey][ciphertext][signature] la signature son 128 y
+        // el encSessionKey otros 128
         if (fileData.length < 128 + 128) {
             throw new SecurityException("Archivo corrupto o demasiado pequeño.");
         }
-     //1. The input encrypted text is divided in two parts: the encrypted text corresponding to the session key and the encrypted text corresponding to the original plaintext.
+        // 1. The input encrypted text is divided in two parts: the encrypted text
+        // corresponding to the session key and the encrypted text corresponding to the
+        // original plaintext.
         // Extract encrypted session key (128 bytes)
         byte[] encSessionKey = new byte[128];
         System.arraycopy(fileData, 0, encSessionKey, 0, 128);
@@ -150,12 +157,14 @@ public class SimpleSec {
         // Extract ciphertext (rest of the file)
         byte[] ciphertext = new byte[fileData.length - 128 - 128];
         System.arraycopy(fileData, 128, ciphertext, 0, ciphertext.length);
-     //2. Decryption of the session key. For this decryption the asymmetric algorithm RSA will be used with the RSA private key of the user. 
-        //The application will prompt the user for the passphrase necessary to retrieve the private RSA key. 
-    char[] pass = promptPassphrase();
-    byte[] aesKey = new String(pass).getBytes("UTF-8");
-    byte[] encPriv = Files.readAllBytes(Paths.get("private.key"));
-    SymmetricCipher sc = new SymmetricCipher();
+        // 2. Decryption of the session key. For this decryption the asymmetric
+        // algorithm RSA will be used with the RSA private key of the user.
+        // The application will prompt the user for the passphrase necessary to retrieve
+        // the private RSA key.
+        char[] pass = promptPassphrase();
+        byte[] aesKey = new String(pass).getBytes("UTF-8");
+        byte[] encPriv = Files.readAllBytes(Paths.get("private.key"));
+        SymmetricCipher sc = new SymmetricCipher();
         PrivateKey priv = null;
 
         try {
@@ -163,12 +172,10 @@ public class SimpleSec {
             priv = loadPrivateKey(privBytes);
         } catch (Exception ex) {
             throw new SecurityException(
-                "WARNING: incorrect passphrase : couldn't decypher the private key.\n" 
-                
+                    "WARNING: incorrect passphrase : couldn't decypher the private key.\n"
+
             );
         }
-
-
 
         // Load public key
         byte[] pubBytes = Files.readAllBytes(Paths.get("public.key"));
@@ -181,7 +188,9 @@ public class SimpleSec {
         if (!rsa.verify(ciphertext, signature, pub)) {
             throw new SecurityException("Signature verification failed! Archivo corrupto o modificado.");
         }
-     //3. Decryption of the encrypted text, using the symmetric decryption algorithm AES in CBC mode of operation. For the decryption process the AES key obtained as the result of the step 2 will be used.  
+        // 3. Decryption of the encrypted text, using the symmetric decryption algorithm
+        // AES in CBC mode of operation. For the decryption process the AES key obtained
+        // as the result of the step 2 will be used.
         // Decrypt AES/CBC
         byte[] plain = sc.decryptCBC(ciphertext, sessionKey);
 
@@ -195,8 +204,9 @@ public class SimpleSec {
     private static char[] promptPassphrase() throws IOException {
         System.out.print("Enter 16-character passphrase: ");
         String pass = scanner.nextLine();
-        if (pass.length() != 16) { //We force the length to be 16
-            throw new IllegalArgumentException("Passphrase must be exactly 16 characters. Try again after restarting the app");
+        if (pass.length() != 16) { // We force the length to be 16
+            throw new IllegalArgumentException(
+                    "Passphrase must be exactly 16 characters. Try again after restarting the app");
         }
         return pass.toCharArray();
     }
