@@ -12,8 +12,8 @@ public class TestSymmetricCipher {
 
             System.out.println("Clave AES generada: " + bytesToHex(key));
 
-            // 2️⃣ Crear instancia de SymmetricCipher
-            SymmetricCipher cipher = new SymmetricCipher(key);
+            // 2️⃣ Crear instancia de SymmetricCipher (constructor sin argumentos)
+            SymmetricCipher cipher = new SymmetricCipher();
 
             // 3️⃣ Texto de prueba
             String plainText = "¡Hola! Esto es un mensaje de prueba para AES CBC PKCS#5.";

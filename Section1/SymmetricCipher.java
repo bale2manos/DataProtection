@@ -4,7 +4,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.NoSuchAlgorithmException;
 import javax.crypto.*;
-import java.security.InvalidKeyException;
 
 public class SymmetricCipher {
 
@@ -19,17 +18,13 @@ public class SymmetricCipher {
 		(byte)55, (byte)56, (byte)57, (byte)48, (byte)49, (byte)50, (byte)51, (byte)52,
 		(byte)53, (byte)54};
 
-    /*************************************************************************************/
+	/*************************************************************************************/
 	/* Constructor method */
-    /*************************************************************************************/
-	public SymmetricCipher (byte[] byteKey) throws InvalidKeyException {
-		this.byteKey = byteKey;
-		try {
-			s = new SymmetricEncryption(byteKey);
-			d = new SymmetricEncryption(byteKey);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
+	/*************************************************************************************/
+	public SymmetricCipher() {
+		this.byteKey = null;
+		this.s = null;
+		this.d = null;
 	}
 
     /*************************************************************************************/
