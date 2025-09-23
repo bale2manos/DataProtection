@@ -37,7 +37,7 @@ public class TestSymmetricCipher {
             }
 
             // TESTS DE ARCHIVOS
-            String[] files = {"test16.txt", "test64.txt", "testQuijote.txt"};
+            String[] files = { "test16.txt", "test64.txt", "testQuijote.txt" };
             for (String filename : files) {
                 try {
                     java.nio.file.Path path = java.nio.file.Paths.get(filename);
