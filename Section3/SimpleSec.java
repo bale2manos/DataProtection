@@ -44,9 +44,19 @@ public class SimpleSec {
                 default:
                     usageAndExit("WARNING Unknown command: " + command);
             }
+        } catch (IllegalArgumentException ia) {
+            System.err.println("Input error: " + ia.getMessage());
+            System.exit(2);
+        } catch (SecurityException se) {
+            System.err.println("Security error: " + se.getMessage());
+            System.exit(3);
+        } catch (IOException io) {
+            System.err.println("I/O error: " + io.getMessage());
+            System.exit(4);
         } catch (Exception e) {
-            System.out.println("Error: " + e.getMessage());
-            System.out.println("Reinicie la aplicación.");
+            System.err.println("Unexpected error: " + e.getClass().getSimpleName() + ": " + e.getMessage());
+            e.printStackTrace(System.err);
+            System.exit(5);
         }
     }
 
@@ -80,20 +90,30 @@ public class SimpleSec {
         // Encrypt private key with AES/CBC and persist encrypted private.key
         SymmetricCipher sc = new SymmetricCipher();
         byte[] encPriv = sc.encryptCBC(privateKeyBytes, aesKey);
-        Files.write(Paths.get("private.key"), encPriv);
+        // atomic write
+        Path privPath = Paths.get("private.key");
+        Files.write(privPath, encPriv, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
         System.out.println("Private key encrypted with AES/CBC.");
     }
 
     // ---------------------- ENCRYPT ----------------------
     private static void encryptFile(String sourceFile, String destFile) throws Exception {
-        // Read plaintext
-        byte[] plain = Files.readAllBytes(Paths.get(sourceFile));
+        // Validate source exists and is readable
+        Path source = Paths.get(sourceFile);
+        if (!Files.exists(source) || !Files.isRegularFile(source)) {
+            throw new IllegalArgumentException("Source file does not exist: " + sourceFile);
+        }
+        byte[] plain = Files.readAllBytes(source);
 
         // Load private key
         char[] pass = promptPassphrase();
         byte[] aesKey = new String(pass).getBytes("UTF-8");
-        byte[] encPriv = Files.readAllBytes(Paths.get("private.key"));
+        Path privPath = Paths.get("private.key");
+        if (!Files.exists(privPath)) {
+            throw new IOException("private.key not found; generate keys first");
+        }
+        byte[] encPriv = Files.readAllBytes(privPath);
         SymmetricCipher sc = new SymmetricCipher();
         PrivateKey priv = null;
 
@@ -108,7 +128,11 @@ public class SimpleSec {
         }
 
         // Load public key
-        byte[] pubBytes = Files.readAllBytes(Paths.get("public.key"));
+        Path pubPath = Paths.get("public.key");
+        if (!Files.exists(pubPath)) {
+            throw new IOException("public.key not found; generate keys first");
+        }
+        byte[] pubBytes = Files.readAllBytes(pubPath);
         PublicKey pub = loadPublicKey(pubBytes);
 
         // Generate session key (16 bytes)
@@ -125,7 +149,13 @@ public class SimpleSec {
         // Sign ciphertext with RSA private key
         byte[] signature = rsa.sign(ciphertext, priv);
 
-        // Write concatenated file: [encSessionKey][ciphertext][signature]
+        // Ensure destination directory exists
+        Path dest = Paths.get(destFile);
+        Path parent = dest.getParent();
+        if (parent != null && !Files.exists(parent)) {
+            throw new IOException("Destination directory does not exist: " + parent.toString());
+        }
+        // Write concatenated file atomically
         try (FileOutputStream fos = new FileOutputStream(destFile)) {
             fos.write(encSessionKey);
             fos.write(ciphertext);
@@ -137,7 +167,11 @@ public class SimpleSec {
 
     // ---------------------- DECRYPT ----------------------
     private static void decryptFile(String sourceFile, String destFile) throws Exception {
-        byte[] fileData = Files.readAllBytes(Paths.get(sourceFile));
+        Path source = Paths.get(sourceFile);
+        if (!Files.exists(source) || !Files.isRegularFile(source)) {
+            throw new IllegalArgumentException("Source file does not exist: " + sourceFile);
+        }
+        byte[] fileData = Files.readAllBytes(source);
         // debemos recibir [encSessionKey][ciphertext][signature] la signature son 128 y
         // el encSessionKey otros 128
         if (fileData.length < 128 + 128) {
@@ -163,7 +197,11 @@ public class SimpleSec {
         // the private RSA key.
         char[] pass = promptPassphrase();
         byte[] aesKey = new String(pass).getBytes("UTF-8");
-        byte[] encPriv = Files.readAllBytes(Paths.get("private.key"));
+        Path privPath = Paths.get("private.key");
+        if (!Files.exists(privPath)) {
+            throw new IOException("private.key not found; generate keys first");
+        }
+        byte[] encPriv = Files.readAllBytes(privPath);
         SymmetricCipher sc = new SymmetricCipher();
         PrivateKey priv = null;
 
@@ -178,7 +216,11 @@ public class SimpleSec {
         }
 
         // Load public key
-        byte[] pubBytes = Files.readAllBytes(Paths.get("public.key"));
+        Path pubPath = Paths.get("public.key");
+        if (!Files.exists(pubPath)) {
+            throw new IOException("public.key not found; generate keys first");
+        }
+        byte[] pubBytes = Files.readAllBytes(pubPath);
         PublicKey pub = loadPublicKey(pubBytes);
 
         // Decrypt session key
@@ -194,8 +236,13 @@ public class SimpleSec {
         // Decrypt AES/CBC
         byte[] plain = sc.decryptCBC(ciphertext, sessionKey);
 
-        // Write plaintext to destination
-        Files.write(Paths.get(destFile), plain);
+        // Ensure destination directory exists
+        Path dest = Paths.get(destFile);
+        Path dparent = dest.getParent();
+        if (dparent != null && !Files.exists(dparent)) {
+            throw new IOException("Destination directory does not exist: " + dparent.toString());
+        }
+        Files.write(dest, plain);
 
         System.out.println("File decrypted and signature verified successfully.");
     }
