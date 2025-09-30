@@ -83,7 +83,7 @@ public class SimpleSec {
         if (privateKeyBytes == null) {
             throw new IOException("Failed to generate RSA private key bytes.");
         }
-
+  
         char[] pass = promptPassphrase();
         byte[] aesKey = new String(pass).getBytes("UTF-8");
 

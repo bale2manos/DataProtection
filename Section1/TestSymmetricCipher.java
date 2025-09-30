@@ -1,5 +1,10 @@
 import java.util.Arrays;
 import java.security.SecureRandom;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 public class TestSymmetricCipher {
 
@@ -29,6 +34,20 @@ public class TestSymmetricCipher {
             String decryptedText = new String(decrypted, "UTF-8");
             System.out.println("Texto desencriptado: " + decryptedText);
 
+            // Compare with OpenSSL (if available)
+            try {
+                byte[] opensslCipher = opensslEncrypt(cipher.addPadding(plaintextBytes), key,
+                        "1234567890123456".getBytes("UTF-8"));
+                System.out.println("OpenSSL encriptado (hex): " + bytesToHex(opensslCipher));
+                if (Arrays.equals(encrypted, opensslCipher)) {
+                    System.out.println("✅ Coincide con OpenSSL.");
+                } else {
+                    System.out.println("⚠️ No coincide con OpenSSL.");
+                }
+            } catch (Exception e) {
+                System.out.println("OpenSSL no disponible o error al invocar: " + e.getMessage());
+            }
+
             // 6️⃣ Verificación
             if (Arrays.equals(plaintextBytes, decrypted)) {
                 System.out.println("✅ La desencriptación coincide con el texto original.");
@@ -54,6 +73,20 @@ public class TestSymmetricCipher {
                     } else {
                         System.out.println("❌ La desencriptación NO coincide con el archivo original.");
                     }
+
+                    // Compare file encryption with OpenSSL
+                    try {
+                        byte[] opensslFileCipher = opensslEncrypt(cipher.addPadding(original), key,
+                                "1234567890123456".getBytes("UTF-8"));
+                        System.out.println("OpenSSL encriptado (hex): " + bytesToHex(opensslFileCipher));
+                        if (Arrays.equals(encryptedFile, opensslFileCipher)) {
+                            System.out.println("✅ Archivo: Coincide con OpenSSL.");
+                        } else {
+                            System.out.println("⚠️ Archivo: No coincide con OpenSSL.");
+                        }
+                    } catch (Exception e) {
+                        System.out.println("OpenSSL no disponible o error al invocar (archivo): " + e.getMessage());
+                    }
                 } catch (Exception e) {
                     System.out.println("Error en test de archivo " + filename + ": " + e.getMessage());
                 }
@@ -70,5 +103,69 @@ public class TestSymmetricCipher {
             sb.append(String.format("%02X", b));
         }
         return sb.toString();
+    }
+
+    // Convierte hex string a bytes
+    private static byte[] hexToBytes(String s) {
+        int len = s.length();
+        byte[] data = new byte[len / 2];
+        for (int i = 0; i < len; i += 2) {
+            data[i / 2] = (byte) ((Character.digit(s.charAt(i), 16) << 4)
+                    + Character.digit(s.charAt(i + 1), 16));
+        }
+        return data;
+    }
+
+    // Invoca OpenSSL para encriptar data usando AES-128-CBC con IV y KEY crudos
+    // (sin salt)
+    private static byte[] opensslEncrypt(byte[] data, byte[] key, byte[] iv) throws IOException, InterruptedException {
+        // Prepare hex args for -K and -iv
+        String keyHex = bytesToHex(key);
+        String ivHex = bytesToHex(iv);
+
+        ProcessBuilder pb = new ProcessBuilder("openssl", "enc", "-aes-128-cbc", "-K", keyHex, "-iv", ivHex, "-nosalt",
+                "-nopad");
+        pb.redirectErrorStream(true);
+        Process p = null;
+        try {
+            p = pb.start();
+
+            // Write data to stdin
+            try (OutputStream os = p.getOutputStream()) {
+                os.write(data);
+                os.flush();
+            }
+
+            // Read stdout
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (InputStream is = p.getInputStream()) {
+                byte[] buf = new byte[4096];
+                int r;
+                while ((r = is.read(buf)) != -1) {
+                    baos.write(buf, 0, r);
+                }
+            }
+
+            boolean exited = p.waitFor(10, TimeUnit.SECONDS);
+            if (!exited) {
+                p.destroyForcibly();
+                throw new IOException("OpenSSL timed out");
+            }
+
+            int code = p.exitValue();
+            if (code != 0) {
+                String out = new String(baos.toByteArray(), "UTF-8");
+                throw new IOException("OpenSSL failed (exit " + code + "): " + out);
+            }
+
+            byte[] result = baos.toByteArray();
+            // OpenSSL with -nopad returns raw AES output; our Java implementation uses
+            // PKCS#5 padding.
+            // So if sizes differ, caller should be aware. We'll return raw bytes.
+            return result;
+        } finally {
+            if (p != null)
+                p.destroy();
+        }
     }
 }
