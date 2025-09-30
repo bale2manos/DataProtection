@@ -23,6 +23,8 @@ public class TestSimpleSec {
         runTest("decrypt_truncated_signature", TestSimpleSec::testDecryptTruncatedSignature);
         runTest("encrypt_destination_invalid", TestSimpleSec::testEncryptDestinationInvalid);
         runTest("encrypt_without_keys", TestSimpleSec::testEncryptWithoutKeys);
+        runTest("encrypt_decrypt_two_entities", TestSimpleSec::testEncryptDecryptTwoEntities);
+        runTest("many_entities_scenarios", TestSimpleSec::testManyEntitiesScenarios);
 
         System.out.println("\nAll tests completed.");
     }
@@ -352,6 +354,153 @@ public class TestSimpleSec {
                 || out.toLowerCase().contains("no such file") : "expected failure when keys missing";
         Files.deleteIfExists(plain);
         Files.deleteIfExists(Paths.get("out_nokeys.tmp"));
+    }
+
+    private static void testEncryptDecryptTwoEntities() throws Exception {
+        // Two-entity flow: Alice generates keys, Bob generates keys.
+        // Then Alice encrypts for Bob (using Alice private + Bob public) and Bob
+        // decrypts.
+        String alicePass = "ALICEPASSPHRASE1"; // 16 chars
+        String bobPass = "BOBPASSPHRASE123"; // 16 chars
+
+        Path plain = Paths.get("plaintext_two.tmp");
+        Path cipher = Paths.get("cipher_two.tmp");
+        Path deciphered = Paths.get("deciphered_two.tmp");
+
+        Files.write(plain, "Mensaje entre Alice y Bob.".getBytes("UTF-8"));
+
+        // Generate Alice keys
+        ProcessResult r = runSimpleSecWithInput(alicePass, "SimpleSec", "g");
+        if (r.exitCode != 0)
+            throw new AssertionError("generateKeys(alice) failed: " + r.output);
+        Files.move(Paths.get("public.key"), Paths.get("alice_public.key"), StandardCopyOption.REPLACE_EXISTING);
+        Files.move(Paths.get("private.key"), Paths.get("alice_private.key"), StandardCopyOption.REPLACE_EXISTING);
+
+        // Generate Bob keys
+        r = runSimpleSecWithInput(bobPass, "SimpleSec", "g");
+        if (r.exitCode != 0)
+            throw new AssertionError("generateKeys(bob) failed: " + r.output);
+        Files.move(Paths.get("public.key"), Paths.get("bob_public.key"), StandardCopyOption.REPLACE_EXISTING);
+        Files.move(Paths.get("private.key"), Paths.get("bob_private.key"), StandardCopyOption.REPLACE_EXISTING);
+
+        // Alice encrypts for Bob: put Alice private and Bob public as current keys
+        Files.copy(Paths.get("alice_private.key"), Paths.get("private.key"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(Paths.get("bob_public.key"), Paths.get("public.key"), StandardCopyOption.REPLACE_EXISTING);
+        r = runSimpleSecWithInput(alicePass, "SimpleSec", "e", plain.toString(), cipher.toString());
+        if (r.exitCode != 0)
+            throw new AssertionError("encrypt by Alice failed: " + r.output);
+
+        // Bob decrypts: put Bob private and Alice public
+        Files.copy(Paths.get("bob_private.key"), Paths.get("private.key"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(Paths.get("alice_public.key"), Paths.get("public.key"), StandardCopyOption.REPLACE_EXISTING);
+        r = runSimpleSecWithInput(bobPass, "SimpleSec", "d", cipher.toString(), deciphered.toString());
+        if (r.exitCode != 0)
+            throw new AssertionError("decrypt by Bob failed: " + r.output);
+
+        boolean ok = Files.exists(deciphered)
+                && new String(Files.readAllBytes(deciphered), "UTF-8")
+                        .equals(new String(Files.readAllBytes(plain), "UTF-8"));
+        assert ok : "two-entities decrypt result mismatch";
+
+        // cleanup
+        Files.deleteIfExists(plain);
+        Files.deleteIfExists(cipher);
+        Files.deleteIfExists(deciphered);
+        Files.deleteIfExists(Paths.get("alice_public.key"));
+        Files.deleteIfExists(Paths.get("alice_private.key"));
+        Files.deleteIfExists(Paths.get("bob_public.key"));
+        Files.deleteIfExists(Paths.get("bob_private.key"));
+        Files.deleteIfExists(Paths.get("public.key"));
+        Files.deleteIfExists(Paths.get("private.key"));
+    }
+
+    private static void testManyEntitiesScenarios() throws Exception {
+        // Create 22 entities with keys: entity_1 ... entity_22
+        int N = 22;
+        List<String> ids = new ArrayList<>();
+        for (int i = 1; i <= N; i++) {
+            String id = "entity_" + i;
+            ids.add(id);
+            String pass = String.format("PASS%012d", i).substring(0, 16); // 16-char pass
+            // generate keys for this entity
+            ProcessResult r = runSimpleSecWithInput(pass, "SimpleSec", "g");
+            if (r.exitCode != 0)
+                throw new AssertionError("generateKeys for " + id + " failed: " + r.output);
+            Files.move(Paths.get("public.key"), Paths.get(id + "_public.key"), StandardCopyOption.REPLACE_EXISTING);
+            Files.move(Paths.get("private.key"), Paths.get(id + "_private.key"), StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        // pick two entities A and B
+        String A = "entity_1";
+        String B = "entity_2";
+        Path plain = Paths.get("many_plain.tmp");
+        Path cipher = Paths.get("many_cipher.tmp");
+        Path dec = Paths.get("many_dec.tmp");
+        Files.write(plain, "mensaje many entities".getBytes("UTF-8"));
+
+        // Scenario 1: normal A->B
+        // place A private and B public
+        Files.copy(Paths.get(A + "_private.key"), Paths.get("private.key"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(Paths.get(B + "_public.key"), Paths.get("public.key"), StandardCopyOption.REPLACE_EXISTING);
+        ProcessResult rEnc = runSimpleSecWithInput("PASS000000000001", "SimpleSec", "e", plain.toString(),
+                cipher.toString());
+        if (rEnc.exitCode != 0)
+            throw new AssertionError("many: encrypt A->B failed: " + rEnc.output);
+        Files.copy(Paths.get(B + "_private.key"), Paths.get("private.key"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(Paths.get(A + "_public.key"), Paths.get("public.key"), StandardCopyOption.REPLACE_EXISTING);
+        ProcessResult rDec = runSimpleSecWithInput("PASS000000000002", "SimpleSec", "d", cipher.toString(),
+                dec.toString());
+        if (rDec.exitCode != 0)
+            throw new AssertionError("many: decrypt A->B failed: " + rDec.output);
+        assert new String(Files.readAllBytes(dec), "UTF-8").equals(new String(Files.readAllBytes(plain), "UTF-8"))
+                : "many: decrypted content mismatch";
+
+        // Scenario 2: missing public.key (encrypt should fail)
+        Files.deleteIfExists(Paths.get("public.key"));
+        Files.deleteIfExists(Paths.get("private.key"));
+        Files.copy(Paths.get(A + "_private.key"), Paths.get("private.key"), StandardCopyOption.REPLACE_EXISTING);
+        ProcessResult rMissingPub = runSimpleSecWithInput("PASS000000000001", "SimpleSec", "e", plain.toString(),
+                "out_missingpub.tmp");
+        assert rMissingPub.exitCode != 0 || rMissingPub.output.toLowerCase().contains("public.key")
+                : "expected encrypt to fail when public.key missing";
+
+        // Scenario 3: missing private.key (decrypt should fail)
+        // first create a proper cipher again
+        Files.copy(Paths.get(B + "_public.key"), Paths.get("public.key"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(Paths.get(A + "_private.key"), Paths.get("private.key"), StandardCopyOption.REPLACE_EXISTING);
+        ProcessResult rEnc2 = runSimpleSecWithInput("PASS000000000001", "SimpleSec", "e", plain.toString(),
+                cipher.toString());
+        if (rEnc2.exitCode != 0)
+            throw new AssertionError("many: encrypt for missing-priv scenario failed: " + rEnc2.output);
+        Files.deleteIfExists(Paths.get("private.key"));
+        ProcessResult rDecMissingPriv = runSimpleSecWithInput("PASS000000000002", "SimpleSec", "d", cipher.toString(),
+                "out_missingpriv.tmp");
+        assert rDecMissingPriv.exitCode != 0 || rDecMissingPriv.output.toLowerCase().contains("private.key")
+                : "expected decrypt to fail when private.key missing";
+
+        // Scenario 4: wrong private key (decrypt should fail or produce incorrect data)
+        // put wrong private (entity_3) and alice public
+        Files.copy(Paths.get("entity_3_private.key"), Paths.get("private.key"), StandardCopyOption.REPLACE_EXISTING);
+        Files.copy(Paths.get(A + "_public.key"), Paths.get("public.key"), StandardCopyOption.REPLACE_EXISTING);
+        ProcessResult rDecWrong = runSimpleSecWithInput("PASS000000000003", "SimpleSec", "d", cipher.toString(),
+                "out_wrongpriv.tmp");
+        assert rDecWrong.exitCode != 0 || rDecWrong.output.toLowerCase().contains("signature")
+                || rDecWrong.output.toLowerCase().contains("corrupt")
+                : "expected decrypt to fail with wrong private key";
+
+        // cleanup
+        Files.deleteIfExists(plain);
+        Files.deleteIfExists(cipher);
+        Files.deleteIfExists(dec);
+        Files.deleteIfExists(Paths.get("out_missingpub.tmp"));
+        Files.deleteIfExists(Paths.get("out_missingpriv.tmp"));
+        Files.deleteIfExists(Paths.get("out_wrongpriv.tmp"));
+        for (String id : ids) {
+            Files.deleteIfExists(Paths.get(id + "_public.key"));
+            Files.deleteIfExists(Paths.get(id + "_private.key"));
+        }
+        Files.deleteIfExists(Paths.get("public.key"));
+        Files.deleteIfExists(Paths.get("private.key"));
     }
 
     // Simple structure for subprocess result
