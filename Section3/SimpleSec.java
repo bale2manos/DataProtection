@@ -228,7 +228,7 @@ public class SimpleSec {
 
         // Verify signature
         if (!rsa.verify(ciphertext, signature, pub)) {
-            throw new SecurityException("Signature verification failed! Archivo corrupto o modificado.");
+            throw new SecurityException("Signature verification failed! File corrupted or modified.");
         }
         // 3. Decryption of the encrypted text, using the symmetric decryption algorithm
         // AES in CBC mode of operation. For the decryption process the AES key obtained

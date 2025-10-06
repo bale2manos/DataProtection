@@ -25,6 +25,7 @@ public class TestSimpleSec {
         runTest("encrypt_without_keys", TestSimpleSec::testEncryptWithoutKeys);
         runTest("encrypt_decrypt_two_entities", TestSimpleSec::testEncryptDecryptTwoEntities);
         runTest("many_entities_scenarios", TestSimpleSec::testManyEntitiesScenarios);
+        runTest("encrypt_decrypt_basket_image", TestSimpleSec::testEncryptDecryptBasketImage);
 
         System.out.println("\nAll tests completed.");
     }
@@ -499,6 +500,63 @@ public class TestSimpleSec {
             Files.deleteIfExists(Paths.get(id + "_public.key"));
             Files.deleteIfExists(Paths.get(id + "_private.key"));
         }
+        Files.deleteIfExists(Paths.get("public.key"));
+        Files.deleteIfExists(Paths.get("private.key"));
+    }
+
+    private static void testEncryptDecryptBasketImage() throws Exception {
+        // Test complete SimpleSec workflow on basket_aranjuez.png
+        String passphrase = "BASKETPASSPHRASE"; // 16 chars
+        Path originalImage = Paths.get("basket_aranjuez.png");
+        Path encryptedImage = Paths.get("basket_encrypted.bin");
+        Path decryptedImage = Paths.get("basket_decrypted.png");
+
+        // Verify original image exists
+        assert Files.exists(originalImage) : "basket_aranjuez.png not found";
+        long originalSize = Files.size(originalImage);
+        assert originalSize > 0 : "basket_aranjuez.png is empty";
+
+        // Step 1: Generate RSA keys
+        ProcessResult rGen = runSimpleSecWithInput(passphrase, "SimpleSec", "g");
+        if (rGen.exitCode != 0)
+            throw new AssertionError("generateKeys failed: " + rGen.output);
+        assert Files.exists(Paths.get("public.key")) : "public.key not created";
+        assert Files.exists(Paths.get("private.key")) : "private.key not created";
+
+        // Step 2: Encrypt the image
+        ProcessResult rEnc = runSimpleSecWithInput(passphrase, "SimpleSec", "e",
+                originalImage.toString(), encryptedImage.toString());
+        if (rEnc.exitCode != 0)
+            throw new AssertionError("encrypt basket image failed: " + rEnc.output);
+        assert Files.exists(encryptedImage) : "encrypted image not created";
+        long encryptedSize = Files.size(encryptedImage);
+        assert encryptedSize > originalSize : "encrypted file should be larger than original";
+
+        // Step 3: Decrypt the image
+        ProcessResult rDec = runSimpleSecWithInput(passphrase, "SimpleSec", "d",
+                encryptedImage.toString(), decryptedImage.toString());
+        if (rDec.exitCode != 0)
+            throw new AssertionError("decrypt basket image failed: " + rDec.output);
+        assert Files.exists(decryptedImage) : "decrypted image not created";
+
+        // Step 4: Verify integrity - compare original and decrypted files byte by byte
+        byte[] originalBytes = Files.readAllBytes(originalImage);
+        byte[] decryptedBytes = Files.readAllBytes(decryptedImage);
+        assert originalBytes.length == decryptedBytes.length : String.format("Size mismatch: original=%d, decrypted=%d",
+                originalBytes.length, decryptedBytes.length);
+
+        boolean identical = Arrays.equals(originalBytes, decryptedBytes);
+        assert identical : "Decrypted image does not match original";
+
+        System.out.println("Basket image encryption/decryption successful:");
+        System.out.println("  Original size: " + originalSize + " bytes");
+        System.out.println("  Encrypted size: " + encryptedSize + " bytes");
+        System.out.println("  Decrypted size: " + decryptedBytes.length + " bytes");
+        System.out.println("  Files are identical: " + identical);
+
+        // Cleanup
+        Files.deleteIfExists(encryptedImage);
+        Files.deleteIfExists(decryptedImage);
         Files.deleteIfExists(Paths.get("public.key"));
         Files.deleteIfExists(Paths.get("private.key"));
     }
